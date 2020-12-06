@@ -110,7 +110,7 @@ void loop()
     lcd.display(); //turns on display if off
     updateLCDError();
   }
-  else if(DHT.temperature > 19) //check temperature if above threshold, turn on fan
+  else if(DHT.temperature > 22) //check temperature if above threshold, turn on fan
   {
     if(fanState == 0)//checks if it is off
     {
