@@ -16,20 +16,16 @@ volatile unsigned char *portB = (unsigned char*) 0x25;
 volatile unsigned char *ddrB = (unsigned char*) 0x24;
 volatile unsigned char *pinB = (unsigned char*) 0x23;
 //inside port b
-#define greenLED 7 //idle state
-#define redLED 6 //error state
-#define yellowLED 5 //diabled state
-#define blueLED 4 //running state and will also turn on the fan
+#define greenLED 7 //idle state, pb7 -> pin13
+#define redLED 6 //error state, pb6 -> pin12
+#define yellowLED 5 //diabled state, pb5 -> pin11
+#define blueLED 4 //running state and will also turn on the fan, pb4 -> pin10
 
 //PORTH registers
 volatile unsigned char *portH = (unsigned char*) 0x102;
 volatile unsigned char *ddrH = (unsigned char*) 0x101;
 volatile unsigned char *pinH = (unsigned char*) 0x100;
-//inside port h
 
-
-
-volatile int servoPos = 0;
 
 LiquidCrystal lcd(9, 8, 7, 6, 5, 4);
 
@@ -40,9 +36,10 @@ volatile unsigned char *pinE = (unsigned char*) 0x2C;
 #define servoSwitch 2 //pin 2, for interrupts
 #define powerSwitch 3 //pin 3, for interrupts
 Servo myservo;  // create servo object to control a servo
-bool servoState = 0;
+bool servoState = 0; //0 is clockwise, 1 is counter-clockwise
+volatile int servoPos = 0;
 
-bool powerState = 1;
+bool powerState = 1; //0 is off, 1 is on
 
 #define dht_apin A15 // Analog Pin sensor is connected to
 dht DHT;
@@ -51,13 +48,15 @@ String date = "01/01/2000"; //         mm/dd/yyyy
 unsigned int currentHours = 0;
 unsigned int currentMinutes = 0;
 unsigned int currentSeconds = 0;
+bool fanState = 0; //off
+
 
 void setup() 
 {
   adc_init();//initializes the ADC
   *ddrB |= 0xF0; // 1111 0000, turns pin 13, 12, 11, and 10 to output
   *ddrE &= 0xCF; // 1100 1111, turns pin 2 and 3 to input
-  *portE |= 0x30; // 0011 0000, turns on pullup resistors for pin 5 and 4
+  *portE |= 0x30; // 0011 0000, turns on pullup resistors for pin 2 and 3
   Serial.begin(9600);
   delay(1000);//Wait before accessing Sensor
   setTime();
@@ -65,6 +64,7 @@ void setup()
   myservo.attach(A7);  // attaches the servo on pin A14 to the servo object
   attachInterrupt(0, updateServo_ISR, RISING); //interupt for pin 2
   attachInterrupt(1, togglePower_ISR, RISING); //interupt for pin 3
+  
 }
 
 void loop() 
@@ -73,15 +73,18 @@ void loop()
   DHT.read11(dht_apin);
   unsigned int temperature = DHT.temperature;
   float humidity = DHT.humidity;
+
+  
   
   if(powerState == 0) //check power state, if off turn everything off except yellow LED
   {
-    if(*portB & 0x01 << blueLED == 1)///checks if it is on
+    if(fanState == 1)///checks if it is on
     {
+      fanState = 0;
       write_pb(blueLED, 0); //turn fan and blue led off
       readTime(); //record time because the fan flipped to off
-      Serial.println("Power Off");
-      Serial.println();
+      Serial.println("Fan powered off");
+      Serial.println("  ");
     }
     write_pb(greenLED, 0);
     write_pb(redLED, 0);
@@ -92,12 +95,13 @@ void loop()
   }
   else if(adc_waterLevel < 100) //check water if below threshold, turn off fan if so
   {
-    if(*portB & 0x01 << blueLED == 1)//checks if it is on
+    if(fanState == 1)//checks if it is on
     {
+      fanState = 0;
       write_pb(blueLED, 0); //turn fan and blue led off
       readTime(); //record time because the fan flipped to off
-      Serial.println("Power Off");
-      Serial.println();
+      Serial.println("Fan powered off");
+      Serial.println("  ");
     }
     write_pb(greenLED, 0);
     write_pb(redLED, 1); //error state
@@ -108,8 +112,14 @@ void loop()
   }
   else if(DHT.temperature > 19) //check temperature if above threshold, turn on fan
   {
+    if(fanState == 0)//checks if it is off
+    {
+      fanState = 1;
       write_pb(blueLED, 1); //running state
       readTime(); //record time because the fan flipped
+      Serial.println("Fan powered on");
+      Serial.println("  ");
+    }
     
     write_pb(greenLED, 0);
     write_pb(redLED, 0);
@@ -123,12 +133,13 @@ void loop()
   }
   else //idle
   {
-    if(*portB & 0x01 << blueLED == 1)//checks if it is on
+    if(fanState == 1)//checks if it is on
     {
+      fanState = 0;
       write_pb(blueLED, 0); //turn fan and blue led off
       readTime(); //record time because the fan flipped to off
-      Serial.println("Power Off");
-      Serial.println();
+      Serial.println("Fan powered off");
+      Serial.println("  ");
     }
     
     write_pb(greenLED, 1);
@@ -136,7 +147,7 @@ void loop()
     write_pb(yellowLED, 0);
 
 
-    lcd.display(); //turns on display if off
+    lcd.display(); //turns on display on
     updateLCD();
   }
 
@@ -261,7 +272,7 @@ void write_ph(unsigned char pin_num, unsigned char state)
     *portH |= 0x01 << pin_num;
   }
 }
-
+//==================================LCD======================================//
 void updateLCD() //display temp and humidity on LCD
 {
   lcd.clear();//clears the screen
@@ -280,6 +291,8 @@ void updateLCDError() //display error on LCD
   lcd.setCursor(0,1); //move to the second line
   lcd.print("WATER LEVEL LOW");
 }
+//===========================================================================//
+//==================================ISR======================================//
 void updateServo_ISR()
 {
   noInterrupts();//disables interrupts
@@ -309,3 +322,4 @@ void togglePower_ISR()
   interrupts();//renables interrupts
   
 }
+//==================================================================================//
